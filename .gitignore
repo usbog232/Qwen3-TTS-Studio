@@ -1,0 +1,12 @@
+# Swift / SPM
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+
+# 打包产物
+build/
+
+# macOS
+.DS_Store
+*.swp

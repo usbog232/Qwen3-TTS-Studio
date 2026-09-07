@@ -1,0 +1,305 @@
+import AppKit
+import AVFoundation
+import Combine
+import Foundation
+
+// MARK: - 设置模型
+
+struct Settings: Codable, Equatable {
+    var binPath: String = NSString(string: "~/llama.cpp/llama-tts").expandingTildeInPath
+    var modelPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
+    var mmprojPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
+    var outputDir: String = NSString(string: "~/Music/Qwen3TTS").expandingTildeInPath
+    /// 记住的上次参考音频
+    var lastSpeakerFile: String = ""
+}
+
+/// 单个模式（克隆 / 纯文本）的生成参数，互相独立
+struct ModeParams: Codable, Equatable {
+    var language: String = "zh"
+    var temperature: Double = 0.80
+    var topK: Int = 40
+    var topP: Double = 0.95
+    var minP: Double = 0.05
+    var seed: Int = -1          // -1 = 每次随机
+    var ctxSize: Int = 4096
+    var maxFrames: Int = -1     // -1 = 不限
+    var threads: Int = 0        // 0 = 自动
+
+    static let defaultParams = ModeParams()
+}
+
+// MARK: - 生成状态
+
+enum GenState: Equatable {
+    case idle
+    case running
+    case success(Seconds: Double)
+    case failed(String)
+}
+
+// MARK: - 生成模式
+
+enum GenMode: String, CaseIterable, Identifiable, Codable {
+    case clone = "声音克隆"
+    case plain = "纯文本合成"
+    var id: String { rawValue }
+}
+
+// MARK: - 历史记录条目
+
+struct GenRecord: Identifiable, Codable, Equatable {
+    var id: UUID
+    var mode: GenMode
+    var file: String
+    var text: String
+    var seconds: Double
+    var date: Date
+}
+
+// MARK: - AppState
+
+@MainActor
+final class AppState: ObservableObject {
+    // 设置
+    @Published var settings = Settings() { didSet { saveSettings() } }
+    @Published var cloneParams = ModeParams()
+    @Published var plainParams = ModeParams()
+
+    // 输入
+    @Published var text: String = ""
+    @Published var speakerFile: String = ""
+
+    // 运行
+    @Published var state: GenState = .idle
+    @Published var currentMode: GenMode = .clone
+    @Published var framesSoFar: Int = 0
+    @Published var log: [String] = []
+    @Published var logExpanded: Bool = false
+
+    // 历史
+    @Published var history: [GenRecord] = []
+
+    private var process: Process?
+    private var lastOutputFile: String = ""
+    private var player: AVAudioPlayer?
+
+    // MARK: 生命周期
+
+    init() {
+        loadSettings()
+        loadHistory()
+    }
+
+    var settingsDir: String {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("Qwen3TTSStudio", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.path
+    }
+
+    private func saveSettings() {
+        let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("settings.json")
+        if let data = try? JSONEncoder().encode(settings) {
+            try? data.write(to: url)
+        }
+    }
+
+    private func loadSettings() {
+        let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("settings.json")
+        if let data = try? Data(contentsOf: url),
+           let s = try? JSONDecoder().decode(Settings.self, from: data) {
+            settings = s
+        }
+        speakerFile = settings.lastSpeakerFile
+    }
+
+    private func loadHistory() {
+        let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("history.json")
+        if let data = try? Data(contentsOf: url) {
+            history = (try? JSONDecoder().decode([GenRecord].self, from: data)) ?? []
+        }
+    }
+
+    private func saveHistory() {
+        let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("history.json")
+        if let data = try? JSONEncoder().encode(history) {
+            try? data.write(to: url)
+        }
+    }
+
+    // MARK: 日志
+
+    func appendLog(_ line: String) {
+        log.append(line)
+        if log.count > 800 { log.removeFirst(log.count - 800) }
+    }
+
+    func clearLog() { log.removeAll() }
+
+    // MARK: 参数选择
+
+    var activeParams: ModeParams {
+        get { currentMode == .clone ? cloneParams : plainParams }
+        set {
+            if currentMode == .clone { cloneParams = newValue } else { plainParams = newValue }
+        }
+    }
+
+    var isRunning: Bool { state == .running }
+
+    // MARK: 生成
+
+    func startGeneration() {
+        guard !isRunning else { return }
+        let text = self.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            state = .failed("请先输入要合成的文本")
+            return
+        }
+
+        var missing: [String] = []
+        if !FileManager.default.isExecutableFile(atPath: settings.binPath) { missing.append("llama-tts 路径") }
+        if !FileManager.default.fileExists(atPath: settings.modelPath) { missing.append("模型 GGUF") }
+        if currentMode == .clone {
+            let sp = speakerFile.trimmingCharacters(in: .whitespaces)
+            if sp.isEmpty { missing.append("参考音频（克隆模式必须）") }
+            else if !FileManager.default.fileExists(atPath: sp) { missing.append("参考音频文件不存在") }
+        }
+        if !missing.isEmpty {
+            state = .failed("缺失：\(missing.joined(separator: "、"))")
+            return
+        }
+
+        // 输出文件
+        let outDir = Paths.ensureDir(settings.outputDir)
+        let stamp = Date().formatted(.iso8601).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").prefix(15)
+        let fname = "Qwen3TTS-\(currentMode == .clone ? "clone" : "plain")-\(stamp).wav"
+        let outFile = (outDir as NSString).appendingPathComponent(fname)
+
+        let args = Engine.buildArgs(
+            settings: settings,
+            params: activeParams,
+            mode: currentMode,
+            text: text,
+            speakerFile: speakerFile,
+            output: outFile
+        )
+
+        framesSoFar = 0
+        clearLog()
+        appendLog("$ \(settings.binPath) \(args.joined(separator: " "))")
+        lastOutputFile = outFile
+        state = .running
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: settings.binPath)
+        proc.arguments = args
+        proc.currentDirectoryURL = URL(fileURLWithPath: (settings.binPath as NSString).deletingLastPathComponent)
+        proc.terminationHandler = { [weak self] p in
+            Task { @MainActor in
+                self?.finishGeneration(exitCode: p.terminationStatus, outFile: outFile)
+            }
+        }
+
+        // stderr 流式（llama.cpp 日志走 stderr）
+        let pipe = Pipe()
+        proc.standardError = pipe
+        proc.standardOutput = Pipe()
+        let handle = pipe.fileHandleForReading
+        weak var weakSelf = self
+        handle.readabilityHandler = { h in
+            let data = h.availableData
+            guard !data.isEmpty else { return }
+            let chunk = String(decoding: data, as: UTF8.self)
+            for line in chunk.components(separatedBy: .newlines) where !line.isEmpty {
+                let s = weakSelf
+                Task { @MainActor in s?.handleLogLine(line) }
+            }
+        }
+
+        do {
+            try proc.run()
+            process = proc
+        } catch {
+            handle.readabilityHandler = nil
+            state = .failed("启动失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func handleLogLine(_ line: String) {
+        appendLog(line)
+        if let m = line.range(of: #"frames generated: (\d+)"#, options: .regularExpression) {
+            let numStr = line[m].replacingOccurrences(of: "frames generated: ", with: "")
+            if let n = Int(numStr) { framesSoFar = n }
+        }
+    }
+
+    private func finishGeneration(exitCode: Int32, outFile: String) {
+        process = nil
+        if exitCode == 0 && FileManager.default.fileExists(atPath: outFile) {
+            // 从日志里抓音频时长
+            var seconds = 0.0
+            for l in log.reversed() {
+                if let r = l.range(of: #"output audio = ([\d.]+)s"#, options: .regularExpression) {
+                    let s = l[r].replacingOccurrences(of: "output audio = ", with: "").replacingOccurrences(of: "s", with: "")
+                    seconds = Double(s) ?? 0
+                    break
+                }
+            }
+            if seconds == 0 {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: outFile)
+                seconds = Double((attrs?[.size] as? Int) ?? 0) / 24000.0
+            }
+            state = .success(Seconds: seconds)
+            let rec = GenRecord(id: UUID(), mode: currentMode, file: outFile,
+                                text: text.prefix(80).description, seconds: seconds, date: Date())
+            history.insert(rec, at: 0)
+            if history.count > 30 { history.removeLast(history.count - 30) }
+            saveHistory()
+        } else {
+            state = .failed("llama-tts 退出码 \(exitCode)（0=正常），请看日志")
+        }
+    }
+
+    func stopGeneration() {
+        process?.terminate()
+    }
+
+    // MARK: 播放
+
+    var playingFile: String?
+
+    func togglePlay(_ file: String) {
+        if playingFile == file { stopPlayback(); return }
+        play(file)
+    }
+
+    func play(_ file: String) {
+        stopPlayback()
+        guard FileManager.default.fileExists(atPath: file) else {
+            state = .failed("音频文件不存在：\(file)")
+            return
+        }
+        do {
+            let p = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: file))
+            p.prepareToPlay()
+            p.play()
+            player = p
+            playingFile = file
+        } catch {
+            state = .failed("播放失败：\(error.localizedDescription)")
+        }
+    }
+
+    func stopPlayback() {
+        player?.stop()
+        player = nil
+        playingFile = nil
+    }
+
+    func deleteRecord(_ id: UUID) {
+        history.removeAll { $0.id == id }
+        saveHistory()
+    }
+}
