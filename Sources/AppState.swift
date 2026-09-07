@@ -84,6 +84,14 @@ final class AppState: ObservableObject {
     private var lastOutputFile: String = ""
     private var player: AVAudioPlayer?
 
+    // 麦克风录音
+    private var recorder: AVAudioRecorder?
+    @Published var isRecording: Bool = false
+    @Published var recordSeconds: Double = 0
+    private var recordTimer: Timer?
+    private var recordFile: String = ""
+    @Published var recordError: String = ""
+
     // MARK: 生命周期
 
     init() {
@@ -207,14 +215,12 @@ final class AppState: ObservableObject {
         proc.standardError = pipe
         proc.standardOutput = Pipe()
         let handle = pipe.fileHandleForReading
-        weak var weakSelf = self
-        handle.readabilityHandler = { h in
+        handle.readabilityHandler = { [weak self] h in
             let data = h.availableData
             guard !data.isEmpty else { return }
             let chunk = String(decoding: data, as: UTF8.self)
             for line in chunk.components(separatedBy: .newlines) where !line.isEmpty {
-                let s = weakSelf
-                Task { @MainActor in s?.handleLogLine(line) }
+                Task { @MainActor in self?.handleLogLine(line) }
             }
         }
 
@@ -301,5 +307,65 @@ final class AppState: ObservableObject {
     func deleteRecord(_ id: UUID) {
         history.removeAll { $0.id == id }
         saveHistory()
+    }
+
+    // MARK: 麦克风录音（参考声）
+
+    func toggleRecording() {
+        recordError = ""
+        if isRecording { stopRecording(); return }
+        startRecording()
+    }
+
+    private func startRecording() {
+        // macOS：无需 AVAudioSession（那是 iOS 的），系统会在首次访问麦克风时弹 TCC 权限
+        let outDir = Paths.ensureDir(settings.outputDir)
+        let stamp = Date().formatted(.iso8601).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").prefix(15)
+        recordFile = (outDir as NSString).appendingPathComponent("clone-ref-\(stamp).wav")
+
+        guard let fmt = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1) else {
+            recordError = "无法创建音频格式"
+            return
+        }
+        do {
+            let rec = try AVAudioRecorder(url: URL(fileURLWithPath: recordFile),
+                                          format: fmt)
+            rec.isMeteringEnabled = true
+            rec.prepareToRecord()
+            rec.record()
+            recorder = rec
+            isRecording = true
+            recordSeconds = 0
+            recordTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
+                Task { @MainActor in
+                    guard let self, let rec = self.recorder, rec.isRecording else {
+                        t.invalidate(); return
+                    }
+                    self.recordSeconds = rec.currentTime
+                }
+            }
+        } catch {
+            recordError = "无法开始录音：\(error.localizedDescription)"
+            if error.localizedDescription.lowercased().contains("permission") {
+                recordError = "麦克风权限被拒绝。到 系统设置 → 隐私与安全性 → 麦克风 中开启，然后重试"
+            }
+        }
+    }
+
+    private func stopRecording() {
+        recorder?.stop()
+        recordTimer?.invalidate()
+        recordTimer = nil
+        recorder = nil
+        isRecording = false
+        let size = (try? FileManager.default.attributesOfItem(atPath: recordFile))?[.size] as? Int ?? 0
+        if size > 0 {
+            speakerFile = recordFile
+            settings.lastSpeakerFile = recordFile
+            stopPlayback()
+        } else {
+            recordError = "录音文件为空（没有采到声音），请重试"
+            try? FileManager.default.removeItem(atPath: recordFile)
+        }
     }
 }

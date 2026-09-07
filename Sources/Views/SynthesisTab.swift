@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 struct SynthesisTab: View {
     @EnvironmentObject var app: AppState
     let mode: GenMode
-    @State private var showImportAlert = false
 
     var body: some View {
         ScrollView {
@@ -54,15 +53,6 @@ struct SynthesisTab: View {
             }
             .padding(16)
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            guard mode == .clone, let u = urls.first else { return false }
-            if u.pathExtension.lowercased().hasPrefix("wav") || ["mp3","m4a","wav","flac","aac"].contains(u.pathExtension.lowercased()) {
-                app.speakerFile = u.path
-                app.settings.lastSpeakerFile = u.path
-                return true
-            }
-            return false
-        }
     }
 
     @ViewBuilder
@@ -84,12 +74,23 @@ struct SynthesisTab: View {
     }
 }
 
-// MARK: - 文本面板
+// MARK: - 拖拽类型常量
+
+enum DropTypes {
+    static let audioExts: Set<String> = ["wav", "wave", "mp3", "m4a", "flac", "aac", "ogg"]
+    static let textExts: Set<String> = ["txt", "text", "md", "markdown", "rtf"]
+    static func accepts(_ url: URL, in set: Set<String>) -> Bool {
+        set.contains(url.pathExtension.lowercased())
+    }
+}
+
+// MARK: - 文本面板（支持拖入 txt）
 
 struct TextPanel: View {
     @EnvironmentObject var app: AppState
     let mode: GenMode
-    @State private var importError = ""
+    @State private var textError = ""
+    @State private var dropHover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -99,89 +100,154 @@ struct TextPanel: View {
                 Spacer()
                 Text("\(app.text.count) 字").font(.caption).foregroundStyle(.tertiary)
             }
-            TextEditor(text: $app.text)
-                .font(.body)
-                .frame(minHeight: 130)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
-                .overlay(alignment: .topLeading) {
-                    if app.text.isEmpty {
-                        Text(mode == .clone
-                             ? "要合成的文字，可直接输入或粘贴…"
-                             : "要合成的文字，可直接输入或粘贴…")
-                            .foregroundStyle(.tertiary)
-                            .padding(14)
-                            .allowsHitTesting(false)
+
+            ZStack {
+                TextEditor(text: $app.text)
+                    .font(.body)
+                    .frame(minHeight: 130)
+                    .padding(6)
+                    .overlay(alignment: .topLeading) {
+                        if app.text.isEmpty {
+                            Text("要合成的文字，可直接输入、粘贴，\n或把 txt / md 文件拖进这个框…")
+                                .foregroundStyle(.tertiary)
+                                .padding(14)
+                                .allowsHitTesting(false)
+                        }
                     }
+                if dropHover {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .background(Color.accentColor.opacity(0.08))
+                        .allowsHitTesting(false)
+                        .overlay {
+                            Label("松开导入文本", systemImage: "doc.badge.arrow.up")
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Color.accentColor)
+                        }
                 }
+            }
+            .background(RoundedRectangle(cornerRadius: 8).stroke(dropHover ? Color.clear : Color(nsColor: .quaternaryLabelColor)))
+            .dropDestination(for: URL.self) { urls, _ in
+                guard let u = urls.first, DropTypes.accepts(u, in: DropTypes.textExts) else { return false }
+                importText(from: u.path)
+                return true
+            } isTargeted: { dropHover = $0 }
 
             HStack(spacing: 10) {
-                Button { importText() } label: { Label("导入 txt…", systemImage: "doc.badge.arrow.up") }
+                Button { importTextViaPanel() } label: { Label("导入 txt…", systemImage: "doc.badge.arrow.up") }
                 Button("清空") { app.text = "" }
                     .disabled(app.text.isEmpty)
-                if !importError.isEmpty {
-                    Text(importError).font(.caption).foregroundStyle(.red).lineLimit(1)
+                if !textError.isEmpty {
+                    Text(textError).font(.caption).foregroundStyle(.red).lineLimit(1)
                 }
             }
             .font(.callout)
         }
     }
 
-    private func importText() {
+    private func importText(from path: String) {
+        textError = ""
+        if let s = try? String(contentsOfFile: path, encoding: .utf8) {
+            app.text = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let s = try? String(contentsOfFile: path) {
+            app.text = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            textError = "读取失败：\(path)"
+        }
+    }
+
+    private func importTextViaPanel() {
         let panel = NSOpenPanel()
         panel.allowedFileTypes = ["txt", "text", "md", "markdown", "rtf"]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            if let s = try? String(contentsOf: url, encoding: .utf8) {
-                app.text = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            } else if let s = try? String(contentsOf: url) {
-                app.text = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                importError = "读取失败"
-            }
+            importText(from: url.path)
         }
     }
 }
 
-// MARK: - 参考音频面板
+// MARK: - 参考音频面板（录音 + 拖入）
 
 struct SpeakerPanel: View {
     @EnvironmentObject var app: AppState
+    @State private var dropHover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("参考音频（克隆音色）", systemImage: "mic.circle.fill")
                     .font(.subheadline.weight(.semibold))
+                Spacer()
+                if app.isRecording {
+                    HStack(spacing: 6) {
+                        Circle().fill(.red).frame(width: 8, height: 8)
+                            .opacity(app.recordSeconds > 0 ? 1 : 0.4)
+                        Text(String(format: "录音中 %.1fs", app.recordSeconds))
+                            .font(.caption.monospacedDigit()).foregroundStyle(.red)
+                    }
+                }
             }
+
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.accentColor.opacity(app.speakerFile.isEmpty ? 0 : 0.06))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary, style: StrokeStyle(lineWidth: 1.2, dash: app.speakerFile.isEmpty ? [5] : [])))
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .stroke(dropHover ? Color.accentColor : Color(nsColor: .quaternaryLabelColor),
+                                style: StrokeStyle(lineWidth: dropHover ? 2 : 1.2, dash: app.speakerFile.isEmpty && !dropHover ? [5] : [])))
                 if app.speakerFile.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "waveform").font(.title2).foregroundStyle(.tertiary)
-                        Text("把一段人声拖进这里，\n或点下方按钮选择（wav / mp3 / m4a）")
+                        Text("把一段人声文件拖进这里，\n或用下方「录音」直接录一段参考声\n（wav / mp3 / m4a / flac）")
                             .font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 150)
+                    .padding(8)
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "play.circle.fill").font(.largeTitle)
                             .foregroundStyle(app.playingFile == app.speakerFile ? Color.accentColor : .secondary)
                         Text((app.speakerFile as NSString).lastPathComponent)
                             .font(.callout.weight(.medium)).lineLimit(1)
-                        Text(speakerPath)
+                        Text(app.speakerFile)
                             .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
                     }
                     .frame(maxWidth: .infinity, minHeight: 150)
                     .contentShape(Rectangle())
                     .onTapGesture { app.togglePlay(app.speakerFile) }
                 }
+                if dropHover {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .background(Color.accentColor.opacity(0.08))
+                        .allowsHitTesting(false)
+                        .overlay {
+                            Label("松开设为参考音频", systemImage: "waveform")
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                }
             }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard let u = urls.first, DropTypes.accepts(u, in: DropTypes.audioExts) else { return false }
+                app.speakerFile = u.path
+                app.settings.lastSpeakerFile = u.path
+                app.stopPlayback()
+                return true
+            } isTargeted: { dropHover = $0 }
 
+            // 录音 / 文件操作行
             HStack(spacing: 10) {
+                Button { app.toggleRecording() } label: {
+                    Label(app.isRecording
+                          ? String(format: "停止（%.0fs）", app.recordSeconds)
+                          : "录音",
+                          systemImage: app.isRecording ? "stop.fill" : "mic.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(app.isRecording ? Color.red : Color.accentColor)
+                .help(app.isRecording ? "点击停止并自动填入参考音频" : "用麦克风录一段参考人声（wav，自动填入）")
+
                 if !app.speakerFile.isEmpty {
                     Button { app.togglePlay(app.speakerFile) } label: {
                         Label(app.playingFile == app.speakerFile ? "停止" : "试听",
@@ -192,20 +258,28 @@ struct SpeakerPanel: View {
                         Label("移除", systemImage: "xmark")
                     }
                     .buttonStyle(.bordered)
+                } else {
+                    Button { pickFile() } label: { Label("选择音频…", systemImage: "folder") }
+                        .buttonStyle(.bordered)
                 }
-                Button { pickFile() } label: { Label(app.speakerFile.isEmpty ? "选择音频…" : "更换…", systemImage: "folder") }
+
+                if !app.speakerFile.isEmpty {
+                    Button { Paths.revealInFinder(app.speakerFile) } label: {
+                        Image(systemName: "arrow.up.forward.app")
+                    }
                     .buttonStyle(.bordered)
-                Button { Paths.revealInFinder(app.speakerFile) } label: {
-                    Image(systemName: "arrow.up.forward.app")
+                    .help("在 Finder 中显示")
                 }
-                .buttonStyle(.bordered)
-                .help("在 Finder 中显示")
             }
             .font(.callout)
+
+            if !app.recordError.isEmpty {
+                Text(app.recordError)
+                    .font(.caption).foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
         }
     }
-
-    private var speakerPath: String { app.speakerFile }
 
     private func pickFile() {
         let panel = NSOpenPanel()

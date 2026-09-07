@@ -19,12 +19,14 @@ cat > "$APPDIR/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key><string>Qwen3-TTS Studio</string>
     <key>CFBundleDisplayName</key><string>Qwen3-TTS Studio</string>
     <key>CFBundleIdentifier</key><string>local.qwen3tts.studio</string>
-    <key>CFBundleVersion</key><string>1.0.0</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key><string>1.1.0</string>
+    <key>CFBundleShortVersionString</key><string>1.1</string>
     <key>CFBundleExecutable</key><string>Qwen3TTSStudio</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>用于录制参考人声，让 Qwen3-TTS 用这个声音朗读你的文字。</string>
     <key>NSAppTransportSecurity</key>
     <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>
