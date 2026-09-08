@@ -179,7 +179,7 @@ struct SpeakerPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(panelTitle, systemImage: "mic.circle.fill")
+                Label(panelTitle, systemImage: mode == .clone ? "mic.circle.fill" : "person.wave.2.fill")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if app.isRecording {
@@ -200,11 +200,13 @@ struct SpeakerPanel: View {
                                 style: StrokeStyle(lineWidth: dropHover ? 2 : 1.2, dash: app.speakerFile.isEmpty && !dropHover ? [5] : [])))
                 if app.speakerFile.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "waveform").font(.title2).foregroundStyle(.tertiary)
-                        Text("把一段人声文件拖进这里，\n或用下方「录音」直接录一段参考声\n（wav / mp3 / m4a / flac）")
+                        Image(systemName: mode == .clone ? "waveform" : "person.wave.2").font(.title2).foregroundStyle(.tertiary)
+                        Text(mode == .clone
+                             ? "把一段人声文件拖进这里，\n或用下方「录音」直接录一段参考声\n（wav / mp3 / m4a / flac）"
+                             : "可选：拖入或选择一段人声来指定音色\n不选则使用模型默认音色\n（wav / mp3 / m4a / flac）")
                             .font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 96)
+                    .frame(maxWidth: .infinity, minHeight: mode == .clone ? 96 : 72)
                     .padding(8)
                 } else {
                     HStack(spacing: 12) {
@@ -285,17 +287,19 @@ struct SpeakerPanel: View {
                 .padding(.top, 2)
             }
 
-            // 录音 / 文件操作行
+            // 录音 / 文件操作行（录音按钮仅克隆模式需要；纯文本音色是可选的）
             HStack(spacing: 10) {
-                Button { app.toggleRecording() } label: {
-                    Label(app.isRecording
-                          ? String(format: "停止（%.0fs）", app.recordSeconds)
-                          : "录音",
-                          systemImage: app.isRecording ? "stop.fill" : "mic.fill")
+                if mode == .clone {
+                    Button { app.toggleRecording() } label: {
+                        Label(app.isRecording
+                              ? String(format: "停止（%.0fs）", app.recordSeconds)
+                              : "录音",
+                              systemImage: app.isRecording ? "stop.fill" : "mic.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(app.isRecording ? Color.red : Color.accentColor)
+                    .help(app.isRecording ? "点击停止并自动填入参考音频" : "用麦克风录一段参考人声（wav，自动填入）")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(app.isRecording ? Color.red : Color.accentColor)
-                .help(app.isRecording ? "点击停止并自动填入参考音频" : "用麦克风录一段参考人声（wav，自动填入）")
 
                 if !app.speakerFile.isEmpty {
                     Button { app.togglePlay(app.speakerFile) } label: {
@@ -319,8 +323,8 @@ struct SpeakerPanel: View {
             }
             .font(.callout)
 
-            // 裁剪选段
-            if !app.speakerFile.isEmpty && app.speakerDuration > 0 {
+            // 裁剪选段（克隆模式专属：裁参考声用；纯文本音色不需要）
+            if mode == .clone, !app.speakerFile.isEmpty && app.speakerDuration > 0 {
                 Divider().padding(.vertical, 2)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
