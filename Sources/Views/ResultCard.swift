@@ -23,10 +23,16 @@ struct ResultCard: View {
                     }
                     Spacer()
                     Button { app.togglePlay(first.file) } label: {
-                        Label(app.playingFile == first.file ? "停止" : "试听",
-                              systemImage: app.playingFile == first.file ? "stop.fill" : "play.fill")
+                        Label(app.playingFile == first.file && !app.isPaused ? "暂停" : "播放",
+                              systemImage: app.playingFile == first.file && !app.isPaused ? "pause.fill" : "play.fill")
                     }
                     .buttonStyle(.bordered)
+                    if app.playingFile == first.file {
+                        Button { app.stopPlayback() } label: {
+                            Label("停止", systemImage: "stop.fill")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     Button { Paths.saveCopy(of: first.file, to: (first.file as NSString).lastPathComponent) } label: {
                         Label("另存", systemImage: "square.and.arrow.down")
                     }
@@ -66,10 +72,11 @@ struct ResultCard: View {
                         Text(String(format: "%.1fs", rec.seconds))
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         Button { app.togglePlay(rec.file) } label: {
-                            Image(systemName: app.playingFile == rec.file ? "stop.fill" : "play.fill")
+                            Image(systemName: app.playingFile == rec.file && !app.isPaused ? "pause.fill" : "play.fill")
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(app.playingFile == rec.file ? Color.accentColor : .secondary)
+                        .help(app.playingFile == rec.file && !app.isPaused ? "暂停" : "播放")
                         Button { Paths.revealInFinder(rec.file) } label: {
                             Image(systemName: "folder")
                         }
