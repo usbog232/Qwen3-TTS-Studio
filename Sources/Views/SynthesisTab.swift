@@ -167,14 +167,14 @@ struct TextPanel: View {
     }
 }
 
-// MARK: - 参考音频面板（录音 + 拖入）
+// MARK: - 参考音频面板（录音 + 拖入 + 播放/暂停/时间轴/音量/裁剪）
 
 struct SpeakerPanel: View {
     @EnvironmentObject var app: AppState
     @State private var dropHover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("参考音频（克隆音色）", systemImage: "mic.circle.fill")
                     .font(.subheadline.weight(.semibold))
@@ -182,13 +182,13 @@ struct SpeakerPanel: View {
                 if app.isRecording {
                     HStack(spacing: 6) {
                         Circle().fill(.red).frame(width: 8, height: 8)
-                            .opacity(app.recordSeconds > 0 ? 1 : 0.4)
                         Text(String(format: "录音中 %.1fs", app.recordSeconds))
                             .font(.caption.monospacedDigit()).foregroundStyle(.red)
                     }
                 }
             }
 
+            // 文件卡片
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.accentColor.opacity(app.speakerFile.isEmpty ? 0 : 0.06))
@@ -201,20 +201,38 @@ struct SpeakerPanel: View {
                         Text("把一段人声文件拖进这里，\n或用下方「录音」直接录一段参考声\n（wav / mp3 / m4a / flac）")
                             .font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 150)
+                    .frame(maxWidth: .infinity, minHeight: 96)
                     .padding(8)
                 } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "play.circle.fill").font(.largeTitle)
-                            .foregroundStyle(app.playingFile == app.speakerFile ? Color.accentColor : .secondary)
-                        Text((app.speakerFile as NSString).lastPathComponent)
-                            .font(.callout.weight(.medium)).lineLimit(1)
-                        Text(app.speakerFile)
-                            .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 12) {
+                        Button { app.togglePlay(app.speakerFile) } label: {
+                            Image(systemName: playIconName).font(.title)
+                                .frame(width: 40, height: 40)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help(app.playingFile == app.speakerFile
+                              ? (app.isPaused ? "继续播放" : "暂停")
+                              : "播放")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text((app.speakerFile as NSString).lastPathComponent)
+                                .font(.callout.weight(.medium)).lineLimit(1)
+                            HStack(spacing: 6) {
+                                if app.playingFile == app.speakerFile {
+                                    Text(playStateText)
+                                        .font(.caption).foregroundStyle(Color.accentColor)
+                                }
+                                Text(String(format: "%.2fs", app.speakerDuration))
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                Text(app.speakerFile)
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                                    .lineLimit(1).truncationMode(.middle)
+                                    .frame(maxWidth: 160, alignment: .leading)
+                            }
+                        }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 150)
-                    .contentShape(Rectangle())
-                    .onTapGesture { app.togglePlay(app.speakerFile) }
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                    .padding(10)
                 }
                 if dropHover {
                     RoundedRectangle(cornerRadius: 8)
@@ -230,11 +248,38 @@ struct SpeakerPanel: View {
             }
             .dropDestination(for: URL.self) { urls, _ in
                 guard let u = urls.first, DropTypes.accepts(u, in: DropTypes.audioExts) else { return false }
+                app.stopPlayback()
                 app.speakerFile = u.path
                 app.settings.lastSpeakerFile = u.path
-                app.stopPlayback()
+                app.refreshSpeakerDuration()
                 return true
             } isTargeted: { dropHover = $0 }
+
+            // 时间轴 + 音量（有文件时）
+            if !app.speakerFile.isEmpty {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(String(format: "%.2fs", app.playingFile == app.speakerFile ? app.playPosition : 0))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 52, alignment: .leading)
+                        Slider(value: positionBinding, in: 0...max(app.speakerDuration, 0.01))
+                            .disabled(app.speakerDuration <= 0)
+                        Text(String(format: "%.2fs", app.speakerDuration))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                    HStack(spacing: 8) {
+                        Image(systemName: "speaker.fill")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Slider(value: volumeBinding, in: 0...1)
+                        Text(String(format: "%d%%", Int(app.playVolume * 100)))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                    .font(.caption)
+                }
+                .padding(.top, 2)
+            }
 
             // 录音 / 文件操作行
             HStack(spacing: 10) {
@@ -250,34 +295,95 @@ struct SpeakerPanel: View {
 
                 if !app.speakerFile.isEmpty {
                     Button { app.togglePlay(app.speakerFile) } label: {
-                        Label(app.playingFile == app.speakerFile ? "停止" : "试听",
-                              systemImage: app.playingFile == app.speakerFile ? "stop.fill" : "play.fill")
+                        Label(app.playingFile == app.speakerFile && !app.isPaused ? "暂停" : "播放",
+                              systemImage: app.playingFile == app.speakerFile && !app.isPaused ? "pause.fill" : "play.fill")
                     }
                     .buttonStyle(.bordered)
-                    Button { app.speakerFile = ""; app.settings.lastSpeakerFile = "" } label: {
+                    Button { app.stopPlayback(); app.speakerFile = ""; app.settings.lastSpeakerFile = ""; app.speakerDuration = 0; app.trimMessage = "" } label: {
                         Label("移除", systemImage: "xmark")
                     }
                     .buttonStyle(.bordered)
-                } else {
-                    Button { pickFile() } label: { Label("选择音频…", systemImage: "folder") }
-                        .buttonStyle(.bordered)
-                }
-
-                if !app.speakerFile.isEmpty {
                     Button { Paths.revealInFinder(app.speakerFile) } label: {
                         Image(systemName: "arrow.up.forward.app")
                     }
                     .buttonStyle(.bordered)
                     .help("在 Finder 中显示")
+                } else {
+                    Button { pickFile() } label: { Label("选择音频…", systemImage: "folder") }
+                        .buttonStyle(.bordered)
                 }
             }
             .font(.callout)
+
+            // 裁剪选段
+            if !app.speakerFile.isEmpty && app.speakerDuration > 0 {
+                Divider().padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("裁剪选段", systemImage: "scissors")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(String(format: "选段 %.2f–%.2fs（%.2fs）", app.trimFrom, app.trimTo, max(0, app.trimTo - app.trimFrom)))
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    VStack(spacing: 4) {
+                        HStack { Text("起点").font(.caption).frame(width: 36, alignment: .leading)
+                            Slider(value: $app.trimFrom, in: 0...app.speakerDuration) }
+                        HStack { Text("终点").font(.caption).frame(width: 36, alignment: .leading)
+                            Slider(value: $app.trimTo, in: 0...app.speakerDuration) }
+                    }
+                    HStack(spacing: 10) {
+                        Button { clampTrim(); app.refreshSpeakerDuration() } label: { Label("重置为全段", systemImage: "arrow.counterclockwise") }
+                            .buttonStyle(.bordered).font(.callout)
+                        Button { app.applyTrim() } label: {
+                            if app.trimWorking { ProgressView().controlSize(.small)
+                            } else { Label("导出选段为新参考", systemImage: "wand.and.stars") }
+                        }
+                        .buttonStyle(.borderedProminent).font(.callout)
+                        .disabled(app.trimWorking)
+                    }
+                    if !app.trimMessage.isEmpty {
+                        Text(app.trimMessage).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
+            }
 
             if !app.recordError.isEmpty {
                 Text(app.recordError)
                     .font(.caption).foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    // 派生：播放图标 / 状态文案
+    private var playIconName: String {
+        if app.playingFile == app.speakerFile {
+            return app.isPaused ? "play.circle.fill" : "pause.circle.fill"
+        }
+        return "play.circle.fill"
+    }
+    private var playStateText: String {
+        app.isPaused ? "已暂停" : "播放中"
+    }
+
+    // 时间轴绑定：拖动时若正在播放/暂停就 seek，否则只记位置
+    private var positionBinding: Binding<Double> {
+        Binding(
+            get: { app.playingFile == app.speakerFile ? app.playPosition : (app.playPosition) },
+            set: { app.seekPlayback(to: $0) }
+        )
+    }
+    private var volumeBinding: Binding<Double> {
+        Binding(
+            get: { Double(app.playVolume) },
+            set: { app.setPlaybackVolume(Float($0)) }
+        )
+    }
+
+    private func clampTrim() {
+        if app.trimFrom > app.trimTo {
+            let t = app.trimFrom; app.trimFrom = app.trimTo; app.trimTo = t
         }
     }
 
@@ -290,6 +396,7 @@ struct SpeakerPanel: View {
         if panel.runModal() == .OK, let url = panel.url {
             app.speakerFile = url.path
             app.settings.lastSpeakerFile = url.path
+            app.refreshSpeakerDuration()
         }
     }
 }

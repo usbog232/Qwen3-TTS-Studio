@@ -150,6 +150,7 @@ final class AppState: ObservableObject {
         settings = loaded
         speakerFile = settings.lastSpeakerFile
         migrateLegacyRecordingDir()
+        refreshSpeakerDuration()
     }
 
     /// 旧版（单目录）里攒下的录音，搬到 input/ 保持 input/output 分离
@@ -334,12 +335,31 @@ final class AppState: ObservableObject {
         process?.terminate()
     }
 
-    // MARK: 播放
+    // MARK: 播放（暂停/继续 + 时间轴 + 音量）
 
-    var playingFile: String?
+    @Published var playingFile: String?
+    @Published var isPaused: Bool = false
+    @Published var playPosition: Double = 0
+    @Published var playDuration: Double = 0
+    @Published var playVolume: Float = 1.0
+    private var playbackTimer: Timer?
+
+    /// 参考音频文件时长（不依赖播放，设置文件时即算好，供裁剪用）
+    @Published var speakerDuration: Double = 0
 
     func togglePlay(_ file: String) {
-        if playingFile == file { stopPlayback(); return }
+        if playingFile == file {
+            if isPaused {
+                player?.play()
+                isPaused = false
+                startPlaybackTimer()
+            } else {
+                player?.pause()
+                isPaused = true
+                stopPlaybackTimer()
+            }
+            return
+        }
         play(file)
     }
 
@@ -351,19 +371,118 @@ final class AppState: ObservableObject {
         }
         do {
             let p = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: file))
+            p.volume = playVolume
             p.prepareToPlay()
             p.play()
             player = p
             playingFile = file
+            isPaused = false
+            playPosition = 0
+            playDuration = p.duration
+            startPlaybackTimer()
         } catch {
             state = .failed("播放失败：\(error.localizedDescription)")
         }
     }
 
+    private func startPlaybackTimer() {
+        stopPlaybackTimer()
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] t in
+            Task { @MainActor in
+                guard let self, let p = self.player, !self.isPaused else { t.invalidate(); return }
+                self.playPosition = min(p.currentTime, p.duration)
+            }
+        }
+    }
+
+    private func stopPlaybackTimer() {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+    }
+
+    func seekPlayback(to seconds: Double) {
+        guard let p = player else { return }
+        let t = max(0, min(seconds, p.duration))
+        p.currentTime = t
+        playPosition = t
+    }
+
+    func setPlaybackVolume(_ v: Float) {
+        playVolume = v
+        player?.volume = v
+    }
+
     func stopPlayback() {
+        stopPlaybackTimer()
         player?.stop()
         player = nil
         playingFile = nil
+        isPaused = false
+        playPosition = 0
+    }
+
+    // MARK: 参考音频裁剪（导出选中段落为新参考）
+
+    @Published var trimFrom: Double = 0
+    @Published var trimTo: Double = 0
+    @Published var trimMessage: String = ""
+    @Published var trimWorking: Bool = false
+
+    /// 文件变更时刷新：时长 + 默认裁剪区间
+    func refreshSpeakerDuration() {
+        guard !speakerFile.isEmpty,
+              let af = try? AVAudioFile(forReading: URL(fileURLWithPath: speakerFile)) else {
+            speakerDuration = 0
+            return
+        }
+        let total = Double(af.length) / af.processingFormat.sampleRate
+        speakerDuration = total
+        trimFrom = 0
+        trimTo = min(total, 15)
+        trimMessage = "文件时长 \(String(format: "%.2f", total))s，拖动下方滑块选段后导出"
+    }
+
+    func applyTrim() {
+        guard !speakerFile.isEmpty else { return }
+        guard let src = try? AVAudioFile(forReading: URL(fileURLWithPath: speakerFile)) else {
+            trimMessage = "无法读取原文件"
+            return
+        }
+        let fmt = src.processingFormat
+        let sampleRate = fmt.sampleRate
+        let from = min(trimFrom, speakerDuration)
+        let to = max(trimTo, from + 0.1)
+        let frameCount = AVAudioFrameCount((to - from) * sampleRate)
+        guard frameCount >= 1600 else {
+            trimMessage = "选段太短（<0.07s）"
+            return
+        }
+        trimWorking = true
+        do {
+            let buffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frameCount)
+            guard let buffer else { throw NSError(domain: "trim", code: 2) }
+            src.framePosition = AVAudioFramePosition(from * sampleRate)
+            try src.read(into: buffer, frameCount: frameCount)
+            buffer.frameLength = frameCount
+
+            let stamp = Date().formatted(.iso8601).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").prefix(15)
+            let outPath = (Paths.ensureDir(settings.inputDir) as NSString)
+                .appendingPathComponent("ref-trim-\(stamp).wav")
+            guard let outFmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: fmt.channelCount) else {
+                throw NSError(domain: "trim", code: 1)
+            }
+            let out = try AVAudioFile(forWriting: URL(fileURLWithPath: outPath), settings: outFmt.settings)
+            try out.write(from: buffer)
+
+            stopPlayback()
+            speakerFile = outPath
+            settings.lastSpeakerFile = outPath
+            refreshSpeakerDuration()
+            trimMessage = "已导出 \(String(format: "%.2f–%.2f", from, to))s → \((outPath as NSString).lastPathComponent)（已设为当前参考）"
+        } catch {
+            trimMessage = "裁剪失败：\(error.localizedDescription)"
+        }
+        trimWorking = false
     }
 
     func deleteRecord(_ id: UUID) {
@@ -425,6 +544,7 @@ final class AppState: ObservableObject {
             speakerFile = recordFile
             settings.lastSpeakerFile = recordFile
             stopPlayback()
+            refreshSpeakerDuration()
         } else {
             recordError = "录音文件为空（没有采到声音），请重试"
             try? FileManager.default.removeItem(atPath: recordFile)
