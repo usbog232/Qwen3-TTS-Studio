@@ -368,10 +368,10 @@ struct SpeakerPanel: View {
         app.isPaused ? "已暂停" : "播放中"
     }
 
-    // 时间轴绑定：拖动时若正在播放/暂停就 seek，否则只记位置
+    // 时间轴绑定：只跟随参考音频自身；播其它文件时恒为 0
     private var positionBinding: Binding<Double> {
         Binding(
-            get: { app.playingFile == app.speakerFile ? app.playPosition : (app.playPosition) },
+            get: { app.playingFile == app.speakerFile ? app.playPosition : 0 },
             set: { app.seekPlayback(to: $0) }
         )
     }
