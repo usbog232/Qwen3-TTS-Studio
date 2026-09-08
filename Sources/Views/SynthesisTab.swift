@@ -176,7 +176,10 @@ struct SpeakerPanel: View {
     @State private var dropHover = false
 
     private var panelTitle: String {
-        app.currentMode == .clone ? "参考音频（当前：声音克隆）" : "参考音频（当前：纯文本合成，未提供）"
+        if app.speakerFile.isEmpty { return "参考音频（未提供）" }
+        return app.settings.speakerEnabled
+            ? "参考音频（启用中 · 声音克隆）"
+            : "参考音频（已禁用 · 纯文本合成）"
     }
 
     var body: some View {
@@ -185,6 +188,19 @@ struct SpeakerPanel: View {
                 Label(panelTitle, systemImage: "mic.circle.fill")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
+                Toggle("", isOn: speakerEnabledBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .disabled(app.speakerFile.isEmpty)  // 没有音频时开关无意义
+                    .help(app.speakerFile.isEmpty
+                          ? "先提供一段参考音频，开关才生效"
+                          : (app.settings.speakerEnabled
+                             ? "参考音频已启用（声音克隆）。关闭 = 切纯文本合成，音频保留"
+                             : "参考音频已禁用（纯文本合成）。打开 = 切回声音克隆"))
+                Text(app.settings.speakerEnabled ? "启用" : "禁用")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(width: 30, alignment: .leading)
                 if app.isRecording {
                     HStack(spacing: 6) {
                         Circle().fill(.red).frame(width: 8, height: 8)
@@ -192,6 +208,20 @@ struct SpeakerPanel: View {
                             .font(.caption.monospacedDigit()).foregroundStyle(.red)
                     }
                 }
+            }
+
+            // 禁用状态提示条
+            if !app.speakerFile.isEmpty && !app.settings.speakerEnabled {
+                HStack(spacing: 6) {
+                    Image(systemName: "pause.circle")
+                        .font(.caption)
+                    Text("参考音频已禁用，当前为纯文本合成；音频已保留，打开开关即切回声音克隆")
+                        .font(.caption)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor).opacity(0.6)))
             }
 
             // 文件卡片
@@ -385,6 +415,13 @@ struct SpeakerPanel: View {
         Binding(
             get: { Double(app.playVolume) },
             set: { app.setPlaybackVolume(Float($0)) }
+        )
+    }
+    // 参考音频启用开关：关闭 = 禁用参考（纯文本），音频保留
+    private var speakerEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { app.settings.speakerEnabled },
+            set: { app.settings.speakerEnabled = $0 }
         )
     }
 

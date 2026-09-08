@@ -15,6 +15,8 @@ struct Settings: Codable, Equatable {
     var outputDir: String = NSString(string: "~/Music/xjtts/output").expandingTildeInPath
     /// 记住的上次参考音频
     var lastSpeakerFile: String = ""
+    /// 参考音频启用开关：true=使用参考音频(声音克隆)，false=禁用(纯文本合成但音频保留)
+    var speakerEnabled: Bool = true
     /// 生成后保温（保持模型页缓存 N 分钟，期间再次生成命中缓存更快）
     var keepAlive: Bool = false
     var keepAliveMinutes: Int = 5
@@ -36,6 +38,7 @@ struct Settings: Codable, Equatable {
             }
         }
         if let v = json["lastSpeakerFile"] as? String { s.lastSpeakerFile = v }
+        if let v = json["speakerEnabled"] as? Bool { s.speakerEnabled = v }
         if let v = json["keepAlive"] as? Bool { s.keepAlive = v }
         if let v = json["keepAliveMinutes"] as? Int { s.keepAliveMinutes = v }
         return s
@@ -225,9 +228,11 @@ final class AppState: ObservableObject {
 
     // MARK: 模式自动判定
 
-    /// 模式由参考音频自动决定：上传/录了参考音频 = 声音克隆；留空 = 纯文本合成
+    /// 模式判定：参考音频存在且启用 = 声音克隆；未提供或被开关禁用 = 纯文本合成
+    /// 开关禁用时音频仍保留，随时可切回克隆
     var currentMode: GenMode {
-        speakerFile.trimmingCharacters(in: .whitespaces).isEmpty ? .plain : .clone
+        let hasSpeaker = !speakerFile.trimmingCharacters(in: .whitespaces).isEmpty
+        return (hasSpeaker && settings.speakerEnabled) ? .clone : .plain
     }
 
     // MARK: 参数选择
@@ -269,12 +274,14 @@ final class AppState: ObservableObject {
         let fname = "xjtts-\(currentMode == .clone ? "clone" : "plain")-\(stamp).wav"
         let outFile = (outDir as NSString).appendingPathComponent(fname)
 
+        // 开关禁用参考音频 → 不传给引擎（纯文本模式），但本地保留音频文件
+        let effectiveSpeaker = settings.speakerEnabled ? speakerFile : ""
         let args = Engine.buildArgs(
             settings: settings,
             params: activeParams,
             mode: currentMode,
             text: text,
-            speakerFile: speakerFile,
+            speakerFile: effectiveSpeaker,
             output: outFile
         )
 
