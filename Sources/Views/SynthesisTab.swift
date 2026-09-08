@@ -24,16 +24,22 @@ struct SynthesisTab: View {
                 HStack(spacing: 12) {
                     if app.isRunning {
                         Button { app.stopGeneration() } label: {
-                            Label("停止", systemImage: "stop.fill").frame(width: 110)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.orange)
-                    } else {
-                        Button { app.startGeneration() } label: {
-                            Label("生成音频", systemImage: "waveform.circle.fill").frame(width: 140)
+                            Label("停止生成", systemImage: "stop.fill")
+                                .font(.title3.weight(.semibold))
+                                .frame(width: 220, height: 44)
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
+                        .tint(.orange)
+                    } else {
+                        Button { app.startGeneration() } label: {
+                            Label("生成音频", systemImage: "waveform.circle.fill")
+                                .font(.title3.weight(.semibold))
+                                .frame(width: 220, height: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(Color.accentColor)
                     }
 
                     statusLabel
