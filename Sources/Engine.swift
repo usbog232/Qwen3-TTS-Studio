@@ -19,17 +19,21 @@ enum Engine {
             args += ["--mmproj", mm]
         }
 
-        // 文本
-        args += ["-p", text]
+        // 文本（可选风格/情感指令前缀）
+        let plainText = text
+        if !params.instruct.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let ins = params.instruct.trimmingCharacters(in: .whitespacesAndNewlines)
+            args += ["-p", "用以下风格说：\(ins)。原文：\(plainText)"]
+        } else {
+            args += ["-p", plainText]
+        }
 
         // 语言
         args += ["--tts-lang", params.language]
 
-        // 参考音频（仅克隆模式）
-        if mode == .clone {
-            let sp = speakerFile.trimmingCharacters(in: .whitespaces)
-            if !sp.isEmpty { args += ["--tts-speaker-file", sp] }
-        }
+        // 参考音频（克隆 & 纯文本均可指定音色）
+        let sp = speakerFile.trimmingCharacters(in: .whitespaces)
+        if !sp.isEmpty { args += ["--tts-speaker-file", sp] }
 
         // 采样参数
         args += ["--temp", String(format: "%.4f", params.temperature)]

@@ -15,9 +15,7 @@ struct SynthesisTab: View {
                 // 输入区：文本 + 参考音频（两列）
                 HStack(alignment: .top, spacing: 16) {
                     TextPanel(mode: mode)
-                    if mode == .clone {
-                        SpeakerPanel()
-                    }
+                    SpeakerPanel(mode: mode)
                 }
 
                 // 参数面板
@@ -171,12 +169,17 @@ struct TextPanel: View {
 
 struct SpeakerPanel: View {
     @EnvironmentObject var app: AppState
+    let mode: GenMode
     @State private var dropHover = false
+
+    private var panelTitle: String {
+        mode == .clone ? "参考音频（克隆音色，必需）" : "音色（可选，指定说话人）"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("参考音频（克隆音色）", systemImage: "mic.circle.fill")
+                Label(panelTitle, systemImage: "mic.circle.fill")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if app.isRecording {

@@ -15,6 +15,9 @@ struct Settings: Codable, Equatable {
     var outputDir: String = NSString(string: "~/Music/xjtts/output").expandingTildeInPath
     /// 记住的上次参考音频
     var lastSpeakerFile: String = ""
+    /// 生成后保温（保持模型页缓存 N 分钟，期间再次生成命中缓存更快）
+    var keepAlive: Bool = false
+    var keepAliveMinutes: Int = 5
     /// 容错读取旧版 settings.json（可能缺 inputDir 等新字段，用默认值补齐）
     static func fromLoose(_ json: [String: Any]) -> Settings? {
         var s = Settings()
@@ -33,6 +36,8 @@ struct Settings: Codable, Equatable {
             }
         }
         if let v = json["lastSpeakerFile"] as? String { s.lastSpeakerFile = v }
+        if let v = json["keepAlive"] as? Bool { s.keepAlive = v }
+        if let v = json["keepAliveMinutes"] as? Int { s.keepAliveMinutes = v }
         return s
     }
 }
@@ -48,6 +53,9 @@ struct ModeParams: Codable, Equatable {
     var ctxSize: Int = 4096
     var maxFrames: Int = -1     // -1 = 不限
     var threads: Int = 0        // 0 = 自动
+    /// 语调/语气/情感指令（自然语言，拼进文本前缀；Qwen3-TTS 的 controllability 通道）
+    /// 留空 = 不做风格指令
+    var instruct: String = ""
 
     static let defaultParams = ModeParams()
 }
@@ -123,6 +131,13 @@ final class AppState: ObservableObject {
         loadHistory()
     }
 
+    deinit {
+        // 保温进程清理
+        keepAliveStopTask?.cancel()
+        keepAliveProc?.terminate()
+        playbackTimer?.invalidate()
+    }
+
     var settingsDir: String {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = base.appendingPathComponent("xjtts", isDirectory: true)
@@ -130,7 +145,7 @@ final class AppState: ObservableObject {
         return dir.path
     }
 
-    private func saveSettings() {
+    func saveSettings() {
         let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("settings.json")
         if let data = try? JSONEncoder().encode(settings) {
             try? data.write(to: url)
@@ -327,6 +342,7 @@ final class AppState: ObservableObject {
             history.insert(rec, at: 0)
             if history.count > 30 { history.removeLast(history.count - 30) }
             saveHistory()
+            scheduleKeepAlive(minutes: settings.keepAliveMinutes)
         } else {
             state = .failed("llama-tts 退出码 \(exitCode)（0=正常），请看日志")
         }
@@ -423,6 +439,54 @@ final class AppState: ObservableObject {
         player = nil
         playingFile = nil
         playPosition = 0
+    }
+
+
+    // MARK: - 生成后保温（keep 模型页缓存 N 分钟）
+
+    @Published var keepAliveActive: Bool = false
+    private var keepAliveProc: Process?
+    private var keepAliveStopTask: Task<Void, Never>?
+
+    func scheduleKeepAlive(minutes: Int) {
+        guard settings.keepAlive, minutes > 0 else {
+            stopKeepAlive()
+            return
+        }
+        startKeepAliveProc()
+        keepAliveStopTask?.cancel()
+        keepAliveStopTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60 * 1_000_000_000)
+            if !Task.isCancelled { self.stopKeepAlive() }
+        }
+    }
+
+    private func startKeepAliveProc() {
+        // 已有保温进程就复用
+        if let p = keepAliveProc, p.isRunning { return }
+        let model = settings.modelPath
+        guard FileManager.default.fileExists(atPath: model) else { return }
+        let sh = Process()
+        // 循环 touch 模型文件（每 15s 完整读一遍），把页缓存 keep 热
+        sh.executableURL = URL(fileURLWithPath: "/bin/sh")
+        sh.arguments = ["-c", "while true; do cat \"\(model)\" > /dev/null; sleep 15; done"]
+        sh.standardOutput = FileHandle.nullDevice
+        sh.standardError = FileHandle.nullDevice
+        do {
+            try sh.run()
+            keepAliveProc = sh
+            keepAliveActive = true
+        } catch {
+            keepAliveActive = false
+        }
+    }
+
+    func stopKeepAlive() {
+        keepAliveStopTask?.cancel()
+        keepAliveStopTask = nil
+        keepAliveProc?.terminate()
+        keepAliveProc = nil
+        keepAliveActive = false
     }
 
     // MARK: 参考音频裁剪（导出选中段落为新参考）

@@ -7,6 +7,8 @@ struct ParamPanel: View {
     let mode: GenMode
     @State private var showAdvanced = false
 
+    static let instructPresets = ["开心活泼", "温柔缓慢", "严肃正式", "轻松随意", "激动高昂", "低沉平静"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -20,6 +22,40 @@ struct ParamPanel: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
             }
+
+            // 语调/语气/情感
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("语调 / 语气 / 情感", systemImage: "theatermasks")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if !app.activeParams.instruct.isEmpty {
+                        Button("清除") { app.activeParams.instruct = "" }
+                            .font(.caption).buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    }
+                }
+                HStack(spacing: 6) {
+                    ForEach(Self.instructPresets, id: \.self) { p in
+                        Button(p) {
+                            app.activeParams.instruct = (app.activeParams.instruct.isEmpty ? "" : app.activeParams.instruct + "、") + p
+                        }
+                        .buttonStyle(.bordered).font(.caption)
+                        .controlSize(.small)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "text.quote")
+                        .foregroundStyle(.secondary)
+                    TextField("自定义指令，如：语速放慢、声音温柔一点、带点疲惫感",
+                              text: $app.activeParams.instruct, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...3)
+                }
+                Text("Qwen3-TTS 用自然语言指令控制风格；指令会拼进文本前缀，留空则纯按文本读。克隆和纯文本都生效。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.05)))
 
             // 主行
             HStack(spacing: 18) {

@@ -5,6 +5,17 @@ import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject var app: AppState
+
+    /// 保温时长的 Binding（slider 用）
+    private var keepMinutesBinding: Binding<Double> {
+        Binding {
+            Double(app.settings.keepAliveMinutes)
+        } set: { v in
+            app.settings.keepAliveMinutes = Int(v)
+            app.saveSettings()
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -36,6 +47,49 @@ struct SettingsView: View {
 
                 Divider().padding(.vertical, 4)
 
+                // 性能：生成后保温
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("性能", systemImage: "speedometer")
+                            .font(.title3.weight(.semibold))
+                    }
+                    HStack(spacing: 10) {
+                        Toggle(isOn: $app.settings.keepAlive.animation()) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("生成后保温模型（推荐）")
+                                    .font(.subheadline.weight(.medium))
+                                Text("开启后，每次成功生成会后台 keep 住模型页缓存一段时间，期间再次生成跳过冷加载，明显变快。App 退出自动释放。")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                    if app.settings.keepAlive {
+                        HStack(spacing: 10) {
+                            Text("保温时长").font(.subheadline)
+                            Slider(value: keepMinutesBinding, in: 1...30)
+                                .frame(width: 180)
+                            Text("\(app.settings.keepAliveMinutes) 分钟")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.leading, 4)
+                        HStack(spacing: 8) {
+                            Circle().fill(app.keepAliveActive ? .green : .gray)
+                                .frame(width: 8, height: 8)
+                            Text(app.keepAliveActive
+                                 ? "保温中（下次生成将命中缓存）"
+                                 : "当前未保温（最近未生成，或开关刚开）")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.leading, 4)
+                    }
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor).opacity(0.55)))
+
+                Divider().padding(.vertical, 4)
+
                 HStack {
                     Label("当前输出目录", systemImage: "music.note.list")
                         .font(.subheadline.weight(.semibold))
@@ -63,8 +117,10 @@ struct SettingsView: View {
                     .font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("• App 每次生成拉起一次 llama-tts 进程，跑完即退，不常驻")
+                    Text("• 「生成后保温」= 后台 keep 模型页缓存 N 分钟，期间再生成跳过冷加载")
+                    Text("• 语调/语气/情感 = 自然语言指令拼进文本前缀（Qwen3-TTS controllability），克隆与纯文本都生效")
+                    Text("• 纯文本模式也可指定音色；不指定则用默认音色")
                     Text("• 设置保存在 ~/Library/Application Support/xjtts/")
-                    Text("• 纯文本模式 = 不传 --tts-speaker-file，llama.cpp 用默认音色")
                     Text("• 上游已知问题：偶发重复短语（llama.cpp #26700），可用「最大帧」兜底")
                 }
                 .font(.caption)

@@ -1,7 +1,7 @@
 # xjtts — 设计文档（PLAN）
 
 > macOS 原生 App：基于 llama.cpp `llama-tts` 的 Qwen3-TTS 声音克隆 / 纯文本合成工作站
-> 版本：v1.0 · 2026-09-08 · 作者：Sutudio
+> 版本：v1.3 · 2026-09-08 · 作者：Sutudio
 
 ## 1. 背景与目标
 
@@ -242,3 +242,45 @@ SpeakerPanel 操作行 +「🎙 录音」
 - **旧目录迁移**：启动时把旧单目录里的 `clone-ref-*.wav` 搬到 input/，并把 lastSpeakerFile 重映射到新位置
 - **设置容错**：`Settings.fromLoose` 兼容缺 inputDir 的旧 settings.json
 - **图标**：assets/icon.png（透明底蓝色 logo）→ build_app.sh 自动转 xjtts.icns 内嵌；App 更名 **xjtts**
+
+### 12.5 v1.2 播放器与播放状态修复
+
+- **播放器**：参考音频区加播放/暂停、时间轴拖动、音量调节、选中段落裁剪导出
+- **播放状态真相源**：用 `player?.isPlaying == true`（`isActive`）做唯一来源，弃用自维护的 `isPaused` 标志
+- **时间轴串扰**：参考时间轴仅当 `playingFile == speakerFile` 时跟随，否则归零
+- **播完按钮卡死**：`AVAudioPlayerDelegate` 是 NSObject 协议，`@MainActor` AppState 不能直接 conform → 独立 `PlaybackDelegate` 类（持有 AppState 引用），`audioPlayerDidFinishPlaying` 回调 `stopPlayback()`
+
+### 12.6 v1.3 音色/情感参数 + 生成后保温（本版）
+
+> 用户诉求：每次生成拉起一次 llama-tts、跑完即退（已是默认行为）；设置页加"常驻内存"开关（默认关）；音色参数进纯文本模式；语调/语气/情感参数在克隆和纯文本都可调。
+
+**关键实测结论（别猜，逐条验证过）**
+
+| 点 | 实测结果 |
+|---|---|
+| `-sys` / `--instruct` / `--emotion` | 当前 llama-tts（2026-08 后）help 里**没有**这些独立参数 |
+| 风格/情感通道 | 唯一通道 = **自然语言指令拼进文本前缀**（Qwen3-TTS controllability）。实测不同指令 → 不同 MD5 输出，确实生效 |
+| 纯文本 + `--tts-speaker-file` | 被接受并改音色 → 纯文本也能指定说话人 |
+| 常驻 server binary | 无 `llama-tts-server`/stdin 多轮；one-shot 是唯一形态 |
+| 慢的根因 | 模型加载实测 ~43s（冷加载），推理本身很快 |
+
+**实现**
+
+1. **语调/语气/情感**：`ModeParams.instruct`（自然语言），ParamPanel 新区块（6 预设按钮 + 自定义框 + 清除）；Engine 拼 `-p "用以下风格说：{instruct}。原文：{text}"`。克隆与纯文本共用同一参数面板
+2. **音色进纯文本**：SpeakerPanel 加 `mode`，两模式都显示；纯文本标题"音色（可选，指定说话人）"；Engine 纯文本也传 `--tts-speaker-file`
+3. **生成后保温**：设置页"性能"区块，Toggle（默认关）+ 时长 Slider（1-30 分钟）。开启后每次成功生成起一个后台 `cat 模型 > /dev/null` 循环进程（每 15s 读一遍），把页缓存 keep 热，N 分钟后自动停，App 退出 `deinit` 清理。选它而非进程内常驻：工程风险最小、不依赖 llama.cpp 库版本、效果等价（命中页缓存）
+
+**关于"常驻内存"的取舍**
+
+llama-tts 是 one-shot，没有常驻推理 server。三个方案里选了**生成后保温**（最稳）：
+- 后台预热缓存：要自己实现保温循环，且首次仍要等一次
+- 进程内常驻推理：要 dlopen libllama，当前无 server 接口，可能要从源码重编，工程量和风险都最大
+- **生成后保温（已选）**：后台 keep 页缓存 N 分钟，期间再生成跳过冷加载，最省最稳
+
+**测试计划**
+
+1. 参数面板点"开心活泼"→ 生成 → 试听语气变化；点"严肃正式"对比
+2. 纯文本模式选一个音色 → 生成 → 声音应是该音色
+3. 设置页开"生成后保温模型" → 生成一次 → 看状态"保温中" → 立即再生成 → 加载应比首次快
+4. 关掉开关 → 生成 → 无保温进程；App 退出后 `pgrep` 无残留 cat 进程
+5. `swift build` 零 error
