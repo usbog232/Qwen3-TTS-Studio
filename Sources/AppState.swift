@@ -9,7 +9,7 @@ struct Settings: Codable, Equatable {
     var binPath: String = NSString(string: "~/llama.cpp/llama-tts").expandingTildeInPath
     var modelPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
     var mmprojPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
-    var outputDir: String = NSString(string: "~/Music/Qwen3TTS").expandingTildeInPath
+    var outputDir: String = NSString(string: "~/Music/xjtts").expandingTildeInPath
     /// 记住的上次参考音频
     var lastSpeakerFile: String = ""
 }
@@ -101,7 +101,7 @@ final class AppState: ObservableObject {
 
     var settingsDir: String {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("Qwen3TTSStudio", isDirectory: true)
+        let dir = base.appendingPathComponent("xjtts", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.path
     }
@@ -182,7 +182,7 @@ final class AppState: ObservableObject {
         // 输出文件
         let outDir = Paths.ensureDir(settings.outputDir)
         let stamp = Date().formatted(.iso8601).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").prefix(15)
-        let fname = "Qwen3TTS-\(currentMode == .clone ? "clone" : "plain")-\(stamp).wav"
+        let fname = "xjtts-\(currentMode == .clone ? "clone" : "plain")-\(stamp).wav"
         let outFile = (outDir as NSString).appendingPathComponent(fname)
 
         let args = Engine.buildArgs(

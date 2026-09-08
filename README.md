@@ -1,6 +1,6 @@
-# Qwen3-TTS Studio
+# xjtts
 
-macOS 原生 App：基于 [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-tts` 的 **Qwen3-TTS 声音克隆 / 纯文本合成**工作站。
+macOS 原生 App（xjtts）：基于 [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-tts` 的 **Qwen3-TTS 声音克隆 / 纯文本合成**工作站。
 
 ![tab](https://img.shields.io/badge/platform-macOS_13%2B-blue) ![lang](https://img.shields.io/badge/Swift-6.x-orange) ![deps](https://img.shields.io/badge/deps-zero-green)
 
@@ -37,7 +37,7 @@ macOS 原生 App：基于 [llama.cpp](https://github.com/ggml-org/llama.cpp) `ll
 
 ```bash
 git clone https://github.com/usbog232/Qwen3-TTS-Studio
-cd Qwen3-TTS-Studio
+cd qwen3-tts-studio
 ./build_app.sh
 open build/Qwen3-TTS-Studio.app
 ```
@@ -89,7 +89,7 @@ open build/Qwen3-TTS-Studio.app
 ## 文件结构
 
 ```
-Qwen3-TTS-Studio/
+qwen3-tts-studio/
 ├── Package.swift
 ├── build_app.sh
 ├── docs/PLAN.md

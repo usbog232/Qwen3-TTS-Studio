@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct Qwen3TTSStudioApp: App {
+struct xjttsApp: App {
     @StateObject private var app = AppState()
 
     var body: some Scene {
-        WindowGroup("Qwen3-TTS Studio") {
+        WindowGroup("xjtts") {
             RootView()
                 .environmentObject(app)
                 .frame(minWidth: 880, minHeight: 640)

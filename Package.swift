@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "Qwen3TTSStudio",
+    name: "xjtts",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "Qwen3TTSStudio",
+            name: "xjtts",
             path: "Sources"
         )
     ]

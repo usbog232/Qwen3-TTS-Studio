@@ -1,4 +1,4 @@
-# Qwen3-TTS Studio — 设计文档（PLAN）
+# xjtts — 设计文档（PLAN）
 
 > macOS 原生 App：基于 llama.cpp `llama-tts` 的 Qwen3-TTS 声音克隆 / 纯文本合成工作站
 > 版本：v1.0 · 2026-09-08 · 作者：Sutudio

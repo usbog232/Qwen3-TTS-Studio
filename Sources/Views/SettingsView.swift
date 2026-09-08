@@ -59,7 +59,7 @@ struct SettingsView: View {
                     .font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("• App 每次生成拉起一次 llama-tts 进程，跑完即退，不常驻")
-                    Text("• 设置保存在 ~/Library/Application Support/Qwen3TTSStudio/")
+                    Text("• 设置保存在 ~/Library/Application Support/xjtts/")
                     Text("• 纯文本模式 = 不传 --tts-speaker-file，llama.cpp 用默认音色")
                     Text("• 上游已知问题：偶发重复短语（llama.cpp #26700），可用「最大帧」兜底")
                 }
