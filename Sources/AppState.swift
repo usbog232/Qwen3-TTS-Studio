@@ -338,7 +338,6 @@ final class AppState: ObservableObject {
     // MARK: 播放（暂停/继续 + 时间轴 + 音量）
 
     @Published var playingFile: String?
-    @Published var isPaused: Bool = false
     @Published var playPosition: Double = 0
     @Published var playDuration: Double = 0
     @Published var playVolume: Float = 1.0
@@ -347,16 +346,21 @@ final class AppState: ObservableObject {
     /// 参考音频文件时长（不依赖播放，设置文件时即算好，供裁剪用）
     @Published var speakerDuration: Double = 0
 
+    /// 是否真的在发声（播放中、未暂停、未播完）
+    var isActive: Bool { player?.isPlaying == true }
+
     func togglePlay(_ file: String) {
         if playingFile == file {
-            if isPaused {
-                player?.play()
-                isPaused = false
-                startPlaybackTimer()
-            } else {
+            if isActive {
                 player?.pause()
-                isPaused = true
                 stopPlaybackTimer()
+            } else {
+                // 暂停中 或 已自然播完 → 从暂停处/从头继续
+                if (player?.currentTime ?? 0) >= (player?.duration ?? 0) {
+                    player?.currentTime = 0
+                }
+                player?.play()
+                startPlaybackTimer()
             }
             return
         }
@@ -376,7 +380,6 @@ final class AppState: ObservableObject {
             p.play()
             player = p
             playingFile = file
-            isPaused = false
             playPosition = 0
             playDuration = p.duration
             startPlaybackTimer()
@@ -389,7 +392,7 @@ final class AppState: ObservableObject {
         stopPlaybackTimer()
         playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] t in
             Task { @MainActor in
-                guard let self, let p = self.player, !self.isPaused else { t.invalidate(); return }
+                guard let self, let p = self.player, self.isActive else { t.invalidate(); return }
                 self.playPosition = min(p.currentTime, p.duration)
             }
         }
@@ -417,7 +420,6 @@ final class AppState: ObservableObject {
         player?.stop()
         player = nil
         playingFile = nil
-        isPaused = false
         playPosition = 0
     }
 

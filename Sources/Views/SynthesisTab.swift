@@ -212,7 +212,7 @@ struct SpeakerPanel: View {
                         }
                         .buttonStyle(.plain)
                         .help(app.playingFile == app.speakerFile
-                              ? (app.isPaused ? "继续播放" : "暂停")
+                              ? (!app.isActive ? "继续播放" : "暂停")
                               : "播放")
                         VStack(alignment: .leading, spacing: 3) {
                             Text((app.speakerFile as NSString).lastPathComponent)
@@ -296,8 +296,8 @@ struct SpeakerPanel: View {
 
                 if !app.speakerFile.isEmpty {
                     Button { app.togglePlay(app.speakerFile) } label: {
-                        Label(app.playingFile == app.speakerFile && !app.isPaused ? "暂停" : "播放",
-                              systemImage: app.playingFile == app.speakerFile && !app.isPaused ? "pause.fill" : "play.fill")
+                        Label(app.playingFile == app.speakerFile && app.isActive ? "暂停" : "播放",
+                              systemImage: app.playingFile == app.speakerFile && app.isActive ? "pause.fill" : "play.fill")
                     }
                     .buttonStyle(.bordered)
                     Button { app.stopPlayback(); app.speakerFile = ""; app.settings.lastSpeakerFile = ""; app.speakerDuration = 0; app.trimMessage = "" } label: {
@@ -360,12 +360,12 @@ struct SpeakerPanel: View {
     // 派生：播放图标 / 状态文案
     private var playIconName: String {
         if app.playingFile == app.speakerFile {
-            return app.isPaused ? "play.circle.fill" : "pause.circle.fill"
+            return !app.isActive ? "play.circle.fill" : "pause.circle.fill"
         }
         return "play.circle.fill"
     }
     private var playStateText: String {
-        app.isPaused ? "已暂停" : "播放中"
+        !app.isActive ? "已暂停" : "播放中"
     }
 
     // 时间轴绑定：只跟随参考音频自身；播其它文件时恒为 0
