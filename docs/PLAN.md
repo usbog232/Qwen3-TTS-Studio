@@ -259,14 +259,14 @@ SpeakerPanel 操作行 +「🎙 录音」
 | 点 | 实测结果 |
 |---|---|
 | `-sys` / `--instruct` / `--emotion` | 当前 llama-tts（2026-08 后）help 里**没有**这些独立参数 |
-| 风格/情感通道 | 唯一通道 = **自然语言指令拼进文本前缀**（Qwen3-TTS controllability）。实测不同指令 → 不同 MD5 输出，确实生效 |
+| 风格/情感通道 | **该模型没有「只改语气、不朗读」的独立指令通道**（`-sys` 实测 invalid argument；官方 PR #26254 只列 `--tts-lang`/`--tts-speaker-file` 两个参数）。自然语言拼进正文会被连同念出。真正控语气 = 克隆模式用对应语气的参考音频 |
 | 纯文本 + `--tts-speaker-file` | 被接受并改音色 → 纯文本也能指定说话人 |
 | 常驻 server binary | 无 `llama-tts-server`/stdin 多轮；one-shot 是唯一形态 |
 | 慢的根因 | 模型加载实测 ~43s（冷加载），推理本身很快 |
 
 **实现**
 
-1. **语调/语气/情感**：`ModeParams.instruct`（自然语言），ParamPanel 新区块（6 预设按钮 + 自定义框 + 清除）；Engine 拼 `-p "用以下风格说：{instruct}。原文：{text}"`。克隆与纯文本共用同一参数面板
+1. **语调/语气/情感（实验性）**：`ModeParams.instruct`，留空=只读正文；填了会拼进正文被一同念出。UI 标「实验性」+ 说明"该模型无静默指令通道，想纯净正文请留空；真正控语气用对应语气的参考音频"。克隆与纯文本共用
 2. **音色进纯文本**：SpeakerPanel 加 `mode`，两模式都显示；纯文本标题"音色（可选，指定说话人）"；Engine 纯文本也传 `--tts-speaker-file`
 3. **生成后保温**：设置页"性能"区块，Toggle（默认关）+ 时长 Slider（1-30 分钟）。开启后每次成功生成起一个后台 `cat 模型 > /dev/null` 循环进程（每 15s 读一遍），把页缓存 keep 热，N 分钟后自动停，App 退出 `deinit` 清理。选它而非进程内常驻：工程风险最小、不依赖 llama.cpp 库版本、效果等价（命中页缓存）
 

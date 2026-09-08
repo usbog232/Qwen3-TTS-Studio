@@ -118,7 +118,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("• App 每次生成拉起一次 llama-tts 进程，跑完即退，不常驻")
                     Text("• 「生成后保温」= 后台 keep 模型页缓存 N 分钟，期间再生成跳过冷加载")
-                    Text("• 语调/语气/情感 = 自然语言指令拼进文本前缀（Qwen3-TTS controllability），克隆与纯文本都生效")
+                    Text("• 语调/语气/情感 = 实验性自然语言指令；填了会和正文一起被念出，想纯净正文请留空。真正控语气用对应语气的参考音频")
                     Text("• 纯文本模式也可指定音色；不指定则用默认音色")
                     Text("• 设置保存在 ~/Library/Application Support/xjtts/")
                     Text("• 上游已知问题：偶发重复短语（llama.cpp #26700），可用「最大帧」兜底")
