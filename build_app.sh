@@ -36,8 +36,8 @@ cat > "$APPDIR/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key><string>xjtts</string>
     <key>CFBundleDisplayName</key><string>xjtts</string>
     <key>CFBundleIdentifier</key><string>local.xjtts.app</string>
-    <key>CFBundleVersion</key><string>1.3.0</string>
-    <key>CFBundleShortVersionString</key><string>1.3.0</string>
+    <key>CFBundleVersion</key><string>1.4.0</string>
+    <key>CFBundleShortVersionString</key><string>1.4.0</string>
     <key>CFBundleExecutable</key><string>xjtts</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>xjtts</string>
