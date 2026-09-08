@@ -26,7 +26,11 @@ struct SettingsView: View {
                         path: $app.settings.mmprojPath,
                         valid: !app.settings.mmprojPath.isEmpty && FileManager.default.fileExists(atPath: app.settings.mmprojPath), kind: .file)
 
-                PathRow(title: "音频默认保存目录", tip: "每次生成自动创建",
+                PathRow(title: "音频输入目录（参考/录音）", tip: "录音参考声落这里；拖入/选择的参考音频也可放这",
+                        path: $app.settings.inputDir,
+                        valid: true, kind: .dir)
+
+                PathRow(title: "音频输出目录（生成结果）", tip: "每次生成自动创建",
                         path: $app.settings.outputDir,
                         valid: true, kind: .dir)
 

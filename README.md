@@ -42,7 +42,17 @@ cd qwen3-tts-studio
 open build/Qwen3-TTS-Studio.app
 ```
 
-首次使用在「设置」页把四个路径指到你的文件（App 默认值已按常见布局预填）。
+首次使用在「设置」页把路径指到你的文件（App 默认值已按常见布局预填）。
+
+音频目录 **input / output 分离**：
+
+```
+~/Music/xjtts/
+├── input/   录音参考声 clone-ref-*.wav、拖入/选择的参考音频
+└── output/  生成结果 xjtts-clone-*.wav / xjtts-plain-*.wav
+```
+
+两个目录都在「设置」页可独立改。旧版单目录里攒的录音会自动迁移到 input/。
 
 ## 使用说明（最短路径）
 

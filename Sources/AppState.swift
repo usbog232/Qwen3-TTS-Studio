@@ -9,9 +9,32 @@ struct Settings: Codable, Equatable {
     var binPath: String = NSString(string: "~/llama.cpp/llama-tts").expandingTildeInPath
     var modelPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
     var mmprojPath: String = "/Volumes/nas/软件插件/ai/Models/llama/models/Qwen3-TTS-12Hz-1-7B-Base-GGUF/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf"
-    var outputDir: String = NSString(string: "~/Music/xjtts").expandingTildeInPath
+    /// 输入目录：参考音频 / 录音（clone-ref-*.wav）
+    var inputDir: String = NSString(string: "~/Music/xjtts/input").expandingTildeInPath
+    /// 输出目录：生成结果（xjtts-*.wav）
+    var outputDir: String = NSString(string: "~/Music/xjtts/output").expandingTildeInPath
     /// 记住的上次参考音频
     var lastSpeakerFile: String = ""
+    /// 容错读取旧版 settings.json（可能缺 inputDir 等新字段，用默认值补齐）
+    static func fromLoose(_ json: [String: Any]) -> Settings? {
+        var s = Settings()
+        if let v = json["binPath"] as? String { s.binPath = v }
+        if let v = json["modelPath"] as? String { s.modelPath = v }
+        if let v = json["mmprojPath"] as? String { s.mmprojPath = v }
+        if let v = json["inputDir"] as? String { s.inputDir = v }
+        if let v = json["outputDir"] as? String {
+            // 旧版单目录：outputDir 指向旧根，则 input/output 都派生自它
+            let legacy = NSString(string: "~/Music/xjtts").expandingTildeInPath
+            if v == legacy {
+                s.outputDir = (legacy as NSString).appendingPathComponent("output")
+                s.inputDir = (legacy as NSString).appendingPathComponent("input")
+            } else {
+                s.outputDir = v
+            }
+        }
+        if let v = json["lastSpeakerFile"] as? String { s.lastSpeakerFile = v }
+        return s
+    }
 }
 
 /// 单个模式（克隆 / 纯文本）的生成参数，互相独立
@@ -115,11 +138,50 @@ final class AppState: ObservableObject {
 
     private func loadSettings() {
         let url = URL(fileURLWithPath: settingsDir).appendingPathComponent("settings.json")
-        if let data = try? Data(contentsOf: url),
-           let s = try? JSONDecoder().decode(Settings.self, from: data) {
-            settings = s
+        var loaded = Settings()
+        if let data = try? Data(contentsOf: url) {
+            if let s = try? JSONDecoder().decode(Settings.self, from: data) {
+                loaded = s
+            } else if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let s = Settings.fromLoose(json) {
+                loaded = s
+            }
         }
+        settings = loaded
         speakerFile = settings.lastSpeakerFile
+        migrateLegacyRecordingDir()
+    }
+
+    /// 旧版（单目录）里攒下的录音，搬到 input/ 保持 input/output 分离
+    private func migrateLegacyRecordingDir() {
+        let fm = FileManager.default
+        let oldRoot = NSString(string: "~/Music/xjtts").expandingTildeInPath
+        guard (try? fm.contentsOfDirectory(atPath: oldRoot)) != nil else { return }
+        let inDir = Paths.ensureDir(settings.inputDir)
+        for name in (try? fm.contentsOfDirectory(atPath: oldRoot)) ?? [] {
+            guard name.hasPrefix("clone-ref-"), name.hasSuffix(".wav") else { continue }
+            let src = (oldRoot as NSString).appendingPathComponent(name)
+            let dst = (inDir as NSString).appendingPathComponent(name)
+            try? fm.moveItem(atPath: src, toPath: dst)
+        }
+        // 老根目录空了就收掉
+        if (try? fm.contentsOfDirectory(atPath: oldRoot))?.isEmpty == true,
+           oldRoot != inDir, oldRoot != settings.outputDir {
+            try? fm.removeItem(atPath: oldRoot)
+        }
+        // 上次参考音频若指向旧根，重映射到 input/
+        if !settings.lastSpeakerFile.isEmpty {
+            let oldBase = (settings.lastSpeakerFile as NSString).deletingLastPathComponent
+            if oldBase == oldRoot {
+                let name = (settings.lastSpeakerFile as NSString).lastPathComponent
+                let newPath = (inDir as NSString).appendingPathComponent(name)
+                if fm.fileExists(atPath: newPath) {
+                    settings.lastSpeakerFile = newPath
+                    speakerFile = newPath
+                    saveSettings()
+                }
+            }
+        }
     }
 
     private func loadHistory() {
@@ -319,9 +381,9 @@ final class AppState: ObservableObject {
 
     private func startRecording() {
         // macOS：无需 AVAudioSession（那是 iOS 的），系统会在首次访问麦克风时弹 TCC 权限
-        let outDir = Paths.ensureDir(settings.outputDir)
+        let inDir = Paths.ensureDir(settings.inputDir)
         let stamp = Date().formatted(.iso8601).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "").prefix(15)
-        recordFile = (outDir as NSString).appendingPathComponent("clone-ref-\(stamp).wav")
+        recordFile = (inDir as NSString).appendingPathComponent("clone-ref-\(stamp).wav")
 
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1) else {
             recordError = "无法创建音频格式"

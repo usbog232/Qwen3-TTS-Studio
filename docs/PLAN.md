@@ -235,3 +235,10 @@ SpeakerPanel 操作行 +「🎙 录音」
 4. 把 .wav/.mp3 拖进参考框 → 参考音频更新；把 .txt 拖进参考框 → 不响应
 5. 无麦克风权限时点录音 → 提示去系统设置开权限，App 不崩
 6. `swift build` 零 error；App 重启后参考音频记忆仍在
+
+### 12.4 音频目录 input/output 分离 + 品牌图标
+
+- **input/output 分离**：录音参考声 → `~/Music/xjtts/input/`，生成结果 → `~/Music/xjtts/output/`，设置页两行独立可改
+- **旧目录迁移**：启动时把旧单目录里的 `clone-ref-*.wav` 搬到 input/，并把 lastSpeakerFile 重映射到新位置
+- **设置容错**：`Settings.fromLoose` 兼容缺 inputDir 的旧 settings.json
+- **图标**：assets/icon.png（透明底蓝色 logo）→ build_app.sh 自动转 xjtts.icns 内嵌；App 更名 **xjtts**
