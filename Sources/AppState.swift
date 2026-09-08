@@ -118,6 +118,7 @@ final class AppState: ObservableObject {
     // MARK: 生命周期
 
     init() {
+        appStateDelegate.appState = self
         loadSettings()
         loadHistory()
     }
@@ -375,6 +376,7 @@ final class AppState: ObservableObject {
         }
         do {
             let p = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: file))
+            p.delegate = appStateDelegate
             p.volume = playVolume
             p.prepareToPlay()
             p.play()
@@ -550,6 +552,19 @@ final class AppState: ObservableObject {
         } else {
             recordError = "录音文件为空（没有采到声音），请重试"
             try? FileManager.default.removeItem(atPath: recordFile)
+        }
+    }
+}
+
+// MARK: - 播放结束回调（独立 delegate，规避 @MainActor 与 NSObject 协议冲突）
+
+private let appStateDelegate = PlaybackFinishDelegate()
+
+final class PlaybackFinishDelegate: NSObject, AVAudioPlayerDelegate {
+    var appState: AppState?
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            self.appState?.stopPlayback()
         }
     }
 }
