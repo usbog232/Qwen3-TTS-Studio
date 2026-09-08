@@ -2,11 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-// MARK: - 生成页（克隆 / 纯文本共用）
+// MARK: - 生成页（模式自动判定：有参考音频=克隆，无=纯文本）
 
 struct SynthesisTab: View {
     @EnvironmentObject var app: AppState
-    let mode: GenMode
 
     var body: some View {
         ScrollView {
@@ -14,12 +13,12 @@ struct SynthesisTab: View {
 
                 // 输入区：文本 + 参考音频（两列）
                 HStack(alignment: .top, spacing: 16) {
-                    TextPanel(mode: mode)
-                    SpeakerPanel(mode: mode)
+                    TextPanel()
+                    SpeakerPanel()
                 }
 
                 // 参数面板
-                ParamPanel(mode: mode)
+                ParamPanel()
 
                 // 操作行
                 HStack(spacing: 12) {
@@ -86,7 +85,6 @@ enum DropTypes {
 
 struct TextPanel: View {
     @EnvironmentObject var app: AppState
-    let mode: GenMode
     @State private var textError = ""
     @State private var dropHover = false
 
@@ -169,17 +167,16 @@ struct TextPanel: View {
 
 struct SpeakerPanel: View {
     @EnvironmentObject var app: AppState
-    let mode: GenMode
     @State private var dropHover = false
 
     private var panelTitle: String {
-        mode == .clone ? "参考音频（克隆音色，必需）" : "音色（可选，指定说话人）"
+        app.currentMode == .clone ? "参考音频（当前：声音克隆）" : "参考音频（当前：纯文本合成，未提供）"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(panelTitle, systemImage: mode == .clone ? "mic.circle.fill" : "person.wave.2.fill")
+                Label(panelTitle, systemImage: "mic.circle.fill")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if app.isRecording {
@@ -200,13 +197,11 @@ struct SpeakerPanel: View {
                                 style: StrokeStyle(lineWidth: dropHover ? 2 : 1.2, dash: app.speakerFile.isEmpty && !dropHover ? [5] : [])))
                 if app.speakerFile.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: mode == .clone ? "waveform" : "person.wave.2").font(.title2).foregroundStyle(.tertiary)
-                        Text(mode == .clone
-                             ? "把一段人声文件拖进这里，\n或用下方「录音」直接录一段参考声\n（wav / mp3 / m4a / flac）"
-                             : "可选：拖入或选择一段人声来指定音色\n不选则使用模型默认音色\n（wav / mp3 / m4a / flac）")
+                        Image(systemName: "person.wave.2").font(.title2).foregroundStyle(.tertiary)
+                        Text("不提供 = 纯文本合成（默认音色）\n拖入或录一段人声 = 声音克隆（模仿该声音）\n（wav / mp3 / m4a / flac）")
                             .font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: mode == .clone ? 96 : 72)
+                    .frame(maxWidth: .infinity, minHeight: 96)
                     .padding(8)
                 } else {
                     HStack(spacing: 12) {
@@ -287,19 +282,17 @@ struct SpeakerPanel: View {
                 .padding(.top, 2)
             }
 
-            // 录音 / 文件操作行（录音按钮仅克隆模式需要；纯文本音色是可选的）
+            // 录音 / 文件操作行
             HStack(spacing: 10) {
-                if mode == .clone {
-                    Button { app.toggleRecording() } label: {
-                        Label(app.isRecording
-                              ? String(format: "停止（%.0fs）", app.recordSeconds)
-                              : "录音",
-                              systemImage: app.isRecording ? "stop.fill" : "mic.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(app.isRecording ? Color.red : Color.accentColor)
-                    .help(app.isRecording ? "点击停止并自动填入参考音频" : "用麦克风录一段参考人声（wav，自动填入）")
+                Button { app.toggleRecording() } label: {
+                    Label(app.isRecording
+                          ? String(format: "停止（%.0fs）", app.recordSeconds)
+                          : "录音",
+                          systemImage: app.isRecording ? "stop.fill" : "mic.fill")
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(app.isRecording ? Color.red : Color.accentColor)
+                .help(app.isRecording ? "点击停止并自动填入参考音频" : "用麦克风录一段参考人声（wav，自动填入）")
 
                 if !app.speakerFile.isEmpty {
                     Button { app.togglePlay(app.speakerFile) } label: {
@@ -323,8 +316,8 @@ struct SpeakerPanel: View {
             }
             .font(.callout)
 
-            // 裁剪选段（克隆模式专属：裁参考声用；纯文本音色不需要）
-            if mode == .clone, !app.speakerFile.isEmpty && app.speakerDuration > 0 {
+            // 裁剪选段
+            if !app.speakerFile.isEmpty && app.speakerDuration > 0 {
                 Divider().padding(.vertical, 2)
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

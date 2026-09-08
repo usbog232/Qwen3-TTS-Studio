@@ -3,24 +3,16 @@ import SwiftUI
 // MARK: - 顶层 Tab
 
 enum TopTab: String, CaseIterable, Identifiable {
-    case clone = "声音克隆"
-    case plain = "纯文本合成"
+    case synth = "合成"
     case settings = "设置"
     var id: String { rawValue }
-    var genMode: GenMode? {
-        switch self {
-        case .clone: return .clone
-        case .plain: return .plain
-        case .settings: return nil
-        }
-    }
 }
 
 // MARK: - 根视图
 
 struct RootView: View {
     @EnvironmentObject var app: AppState
-    @State private var tab: TopTab = .clone
+    @State private var tab: TopTab = .synth
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,10 +20,7 @@ struct RootView: View {
             HStack(spacing: 6) {
                 ForEach(TopTab.allCases) { t in
                     Button {
-                        withAnimation(.easeOut(duration: 0.12)) {
-                            tab = t
-                            if let m = t.genMode { app.currentMode = m }
-                        }
+                        withAnimation(.easeOut(duration: 0.12)) { tab = t }
                     } label: {
                         Text(t.rawValue)
                             .font(.system(size: 14, weight: tab == t ? .semibold : .regular))
@@ -46,6 +35,8 @@ struct RootView: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
+                // 当前模式徽章：由是否提供参考音频自动判定
+                modeBadge
                 Text(app.isRunning ? "生成中…" : readyHint)
                     .font(.caption)
                     .foregroundStyle(app.isRunning ? Color.accentColor : .secondary)
@@ -55,8 +46,7 @@ struct RootView: View {
             // 主内容
             Group {
                 switch tab {
-                case .clone: SynthesisTab(mode: .clone)
-                case .plain: SynthesisTab(mode: .plain)
+                case .synth: SynthesisTab()
                 case .settings: SettingsView()
                 }
             }
@@ -68,10 +58,18 @@ struct RootView: View {
         }
     }
 
+    private var modeBadge: some View {
+        Text(app.currentMode == .clone ? "模式：声音克隆" : "模式：纯文本合成")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(app.currentMode == .clone ? Color.accentColor : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.08)))
+    }
+
     private var readyHint: String {
         if !FileManager.default.isExecutableFile(atPath: app.settings.binPath) { return "⚠ 未配置 llama-tts" }
         if !FileManager.default.fileExists(atPath: app.settings.modelPath) { return "⚠ 未配置模型" }
-        if tab == .clone && (app.speakerFile.isEmpty || !FileManager.default.fileExists(atPath: app.speakerFile)) { return "待选参考音频" }
         return "就绪"
     }
 }

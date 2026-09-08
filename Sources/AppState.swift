@@ -103,7 +103,6 @@ final class AppState: ObservableObject {
 
     // 运行
     @Published var state: GenState = .idle
-    @Published var currentMode: GenMode = .clone
     @Published var framesSoFar: Int = 0
     @Published var log: [String] = []
     @Published var logExpanded: Bool = false
@@ -224,6 +223,13 @@ final class AppState: ObservableObject {
 
     func clearLog() { log.removeAll() }
 
+    // MARK: 模式自动判定
+
+    /// 模式由参考音频自动决定：上传/录了参考音频 = 声音克隆；留空 = 纯文本合成
+    var currentMode: GenMode {
+        speakerFile.trimmingCharacters(in: .whitespaces).isEmpty ? .plain : .clone
+    }
+
     // MARK: 参数选择
 
     var activeParams: ModeParams {
@@ -248,10 +254,9 @@ final class AppState: ObservableObject {
         var missing: [String] = []
         if !FileManager.default.isExecutableFile(atPath: settings.binPath) { missing.append("llama-tts 路径") }
         if !FileManager.default.fileExists(atPath: settings.modelPath) { missing.append("模型 GGUF") }
-        if currentMode == .clone {
-            let sp = speakerFile.trimmingCharacters(in: .whitespaces)
-            if sp.isEmpty { missing.append("参考音频（克隆模式必须）") }
-            else if !FileManager.default.fileExists(atPath: sp) { missing.append("参考音频文件不存在") }
+        let sp = speakerFile.trimmingCharacters(in: .whitespaces)
+        if !sp.isEmpty && !FileManager.default.fileExists(atPath: sp) {
+            missing.append("参考音频文件不存在")
         }
         if !missing.isEmpty {
             state = .failed("缺失：\(missing.joined(separator: "、"))")

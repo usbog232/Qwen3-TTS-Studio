@@ -1,16 +1,15 @@
 import SwiftUI
 
-// MARK: - 参数微调面板（按模式独立保存）
+// MARK: - 参数微调面板（克隆/纯文本各自独立保存，跟随当前自动判定的模式）
 
 struct ParamPanel: View {
     @EnvironmentObject var app: AppState
-    let mode: GenMode
     @State private var showAdvanced = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("参数微调（\(mode.rawValue)独立保存）", systemImage: "slider.horizontal.3")
+                Label("参数微调（\(app.currentMode.rawValue)参数组）", systemImage: "slider.horizontal.3")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Button("恢复默认") {

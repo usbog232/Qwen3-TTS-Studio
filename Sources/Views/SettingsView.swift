@@ -116,6 +116,7 @@ struct SettingsView: View {
                 Text("关于")
                     .font(.subheadline.weight(.semibold))
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("• 单页设计：不提供参考音频 = 纯文本合成（默认音色）；提供参考音频或录音 = 声音克隆")
                     Text("• App 每次生成拉起一次 llama-tts 进程，跑完即退，不常驻")
                     Text("• 「生成后保温」= 后台 keep 模型页缓存 N 分钟，期间再生成跳过冷加载")
                     Text("• 语调/语气/情感 = 实验性自然语言指令；填了会和正文一起被念出，想纯净正文请留空。真正控语气用对应语气的参考音频")
